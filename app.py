@@ -119,8 +119,9 @@ def train_agent(episodes, use_dyna_q):
             agent_position = new_position
 
             # Visualisasikan grid dengan agen
+            display_area.empty()  # Clear the previous frame
             display_grid(agent_position, obstacles, goal_position)
-            time.sleep(0.2)  # Waktu jeda untuk animasi
+            time.sleep(0.2)  # Waktu jeda untuk animasi (frame per frame)
 
             # Hentikan jika mencapai tujuan
             if agent_position == goal_position:
