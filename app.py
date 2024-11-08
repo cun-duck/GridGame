@@ -55,17 +55,19 @@ def dyna_q_planning():
             q_values = Q_TABLE[state]
             q_values[action] += 0.1 * (reward + 0.9 * max(Q_TABLE[next_state].values()) - q_values[action])
 
-# Fungsi untuk menjalankan satu episode pelatihan
-def run_episode():
+# Fungsi untuk menjalankan pelatihan agen (tanpa pemisahan episode)
+def run_training():
     state = (0, 0)  # Mulai dari pojok kiri atas
-    total_reward = 0
     trajectory = []
     
-    for step in range(100):  # Mengatur panjang langkah di satu episode
+    # Pengaturan untuk visualisasi langsung
+    st.title('Pelatihan Agen AI dengan Dyna-Q (Live Video)')
+    video_placeholder = st.empty()  # Placeholder untuk video live
+    
+    step = 0
+    while True:  # Pelatihan berjalan terus-menerus
         action = choose_action(state)
         next_state, reward = take_action(state, action)
-        total_reward += reward
-        trajectory.append((state, action, reward))
         
         # Pembelajaran Dyna-Q
         update_model(state, action, next_state, reward)
@@ -83,33 +85,27 @@ def run_episode():
         if state == OBSTACLE_STATE:
             cv2.rectangle(img, (OBSTACLE_STATE[1]*80, OBSTACLE_STATE[0]*80), (OBSTACLE_STATE[1]*80 + 80, OBSTACLE_STATE[0]*80 + 80), (255, 0, 0), -1)
         
-        # Display image as real-time video
-        st.image(img, channels="BGR", use_column_width=True)
-        time.sleep(0.1)  # Atur kecepatan visualisasi (lebih lambat untuk efek video)
-    
-    return total_reward, trajectory
+        # Display image as real-time video in Streamlit
+        video_placeholder.image(img, channels="BGR", use_column_width=True)
+        
+        # Delay untuk efek video
+        time.sleep(0.1)  # Kecepatan visualisasi (bisa disesuaikan)
+        step += 1
 
 # Fungsi utama Streamlit
 def main():
-    st.title('Pelatihan Agen AI dengan Dyna-Q')
-
-    # Sidebar untuk pengaturan
     st.sidebar.header('Pengaturan')
-    episodes = st.sidebar.slider('Jumlah Episode', min_value=1, max_value=100, value=50, step=1)
     start_button = st.sidebar.button('Mulai Pelatihan')
-
+    
     # Inisialisasi Q-table
     init_q_table()
-
+    
     # Menjalankan pelatihan jika tombol ditekan
     if start_button:
         st.sidebar.text("Pelatihan dimulai! Visualisasi akan ditampilkan secara langsung.")
         
         # Menjalankan pelatihan tanpa pemisahan per episode
-        for episode in range(episodes):
-            total_reward, trajectory = run_episode()
-            st.sidebar.text(f"Total reward episode {episode + 1}: {total_reward}")
-            time.sleep(0.5)  # Memberikan sedikit waktu antara episode
+        run_training()
 
 if __name__ == "__main__":
     main()
