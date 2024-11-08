@@ -5,36 +5,40 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-# Sidebar untuk mengatur ukuran grid
+# Sidebar untuk mengatur ukuran grid dan jumlah episode
 st.sidebar.header("Grid Settings")
 grid_size = st.sidebar.slider("Grid Size", min_value=5, max_value=10, value=5)
+episodes = st.sidebar.slider("Number of Episodes", min_value=1, max_value=100, value=20)
+use_dyna_q = st.sidebar.checkbox("Use Dyna-Q", True)
 
-# Sidebar untuk memasukkan posisi halangan
-st.sidebar.header("Obstacle Settings")
-num_obstacles = st.sidebar.slider("Number of Obstacles", min_value=0, max_value=5, value=2)
-obstacles = []
-for i in range(num_obstacles):
-    x = st.sidebar.number_input(f"Obstacle {i+1} Row", min_value=0, max_value=grid_size-1, value=i)
-    y = st.sidebar.number_input(f"Obstacle {i+1} Col", min_value=0, max_value=grid_size-1, value=i)
-    obstacles.append((x, y))
+# Tempat menyimpan posisi halangan
+obstacles = set()
 
-# Set posisi tujuan dan agen awal
-goal_position = (grid_size - 1, grid_size - 1)
-start_position = (0, 0)
+# Fungsi untuk menampilkan grid interaktif dengan tombol
+def display_interactive_grid(grid_size, obstacles):
+    st.write("Klik pada sel untuk menambahkan atau menghapus halangan.")
+    for i in range(grid_size):
+        cols = st.columns(grid_size)  # Buat kolom sesuai grid_size
+        for j in range(grid_size):
+            # Tandai sel sebagai "Halangan" jika berada di dalam set obstacles
+            label = "X" if (i, j) in obstacles else ""
+            if cols[j].button(label, key=f"btn-{i}-{j}"):
+                # Tambah atau hapus halangan tergantung status saat ini
+                if (i, j) in obstacles:
+                    obstacles.remove((i, j))  # Hapus halangan jika sudah ada
+                else:
+                    obstacles.add((i, j))  # Tambahkan halangan baru
+    return obstacles
 
-# Q-table untuk demo
-Q_table = np.zeros((grid_size, grid_size, 4))  # 4 actions (up, down, left, right)
-action_mapping = {0: "Up", 1: "Down", 2: "Left", 3: "Right"}
-
-# Fungsi untuk menampilkan grid
-def display_grid(agent_position, display_area):
+# Fungsi untuk memvisualisasikan grid dengan halangan dan posisi agen
+def display_grid(agent_position, obstacles, goal_position):
     grid = np.zeros((grid_size, grid_size))
     grid[goal_position] = 0.5  # Mark the goal
     grid[agent_position] = 1   # Mark the agent
 
-    for obstacle in obstacles:
-        if 0 <= obstacle[0] < grid_size and 0 <= obstacle[1] < grid_size:
-            grid[obstacle] = -1  # Mark obstacles
+    for obs in obstacles:
+        if 0 <= obs[0] < grid_size and 0 <= obs[1] < grid_size:
+            grid[obs] = -1  # Mark obstacles
 
     fig, ax = plt.subplots()
     ax.imshow(grid, cmap="coolwarm", origin="upper")
@@ -42,7 +46,7 @@ def display_grid(agent_position, display_area):
     ax.set_yticks(range(grid_size))
     ax.grid(True)
     
-    display_area.pyplot(fig)
+    st.pyplot(fig)
 
 # Fungsi untuk menggerakkan agen dengan mempertimbangkan halangan
 def move_agent(agent_position, action):
@@ -57,64 +61,84 @@ def move_agent(agent_position, action):
         return agent_position  # Prevent moving into obstacle
     return (x, y)
 
-# Training function with Q-learning
-def train_agent(episodes, use_qlearning, display_area):
-    agent_position = start_position
+# Fungsi untuk melatih agen menggunakan Dyna-Q
+def train_agent(episodes, use_dyna_q):
+    Q_table = np.zeros((grid_size, grid_size, 4))  # 4 actions (up, down, left, right)
+    model = {}  # Model untuk menyimpan pengalaman dan transisi
+    agent_position = (0, 0)
+    goal_position = (grid_size - 1, grid_size - 1)
+
     alpha = 0.1  # Learning rate
     gamma = 0.9  # Discount factor
     epsilon = 1.0  # Exploration rate (starts high, decays over time)
     epsilon_decay = 0.995  # Decay factor for exploration rate
+    n_planning_steps = 10  # Jumlah langkah perencanaan dalam Dyna-Q
 
-    for _ in range(episodes):
-        # Decide on action using epsilon-greedy strategy
-        if np.random.rand() < epsilon:
-            action = np.random.randint(0, 4)  # Explore: Random action
-        else:
-            action = np.argmax(Q_table[agent_position])  # Exploit: Best known action
+    display_area = st.empty()  # Area untuk visualisasi pergerakan agen
 
-        # Perform the action and move the agent
-        new_position = move_agent(agent_position, action)
+    for ep in range(episodes):
+        agent_position = (0, 0)  # Mulai dari posisi awal di setiap episode
+        for step in range(100):  # Maksimal 100 langkah per episode
+            # Tentukan aksi dengan strategi epsilon-greedy
+            if np.random.rand() < epsilon:
+                action = np.random.randint(0, 4)  # Jelajahi: Aksi acak
+            else:
+                action = np.argmax(Q_table[agent_position])  # Eksploitasi: Aksi terbaik
 
-        # Check if the new position is out of bounds or an obstacle
-        if new_position == agent_position:
-            reward = -1  # Penalize for hitting an obstacle or boundary
-        elif new_position == goal_position:
-            reward = 1  # Positive reward for reaching the goal
-        else:
-            reward = -0.1  # Small penalty for regular moves
+            # Lakukan aksi dan pindahkan agen
+            new_position = move_agent(agent_position, action)
 
-        # Update Q-value using the Q-learning formula
-        old_q_value = Q_table[agent_position[0], agent_position[1], action]
-        future_q_value = np.max(Q_table[new_position[0], new_position[1]])  # Max Q-value for the new position
-        Q_table[agent_position[0], agent_position[1], action] = old_q_value + alpha * (reward + gamma * future_q_value - old_q_value)
+            # Perhitungan reward
+            if new_position == agent_position:
+                reward = -1  # Penalti untuk tabrakan dengan halangan
+            elif new_position == goal_position:
+                reward = 1  # Reward untuk mencapai tujuan
+            else:
+                reward = -0.1  # Penalti kecil untuk setiap langkah
 
-        # Update agent's position
-        agent_position = new_position
+            # Update Q-value berdasarkan pengalaman nyata
+            old_q_value = Q_table[agent_position[0], agent_position[1], action]
+            future_q_value = np.max(Q_table[new_position[0], new_position[1]])
+            Q_table[agent_position[0], agent_position[1], action] = old_q_value + alpha * (reward + gamma * future_q_value - old_q_value)
 
-        # Decrease epsilon over time to reduce exploration
+            # Simpan transisi dalam model untuk pembelajaran imajiner
+            if (agent_position, action) not in model:
+                model[(agent_position, action)] = []
+            model[(agent_position, action)].append((reward, new_position))
+
+            # Pembelajaran imajiner (Dyna-Q)
+            for _ in range(n_planning_steps):
+                # Pilih transisi acak dari model dan lakukan pembaruan Q
+                (s, a) = list(model.keys())[np.random.randint(0, len(model))]
+                reward_sim, next_state_sim = model[(s, a)][np.random.randint(0, len(model[(s, a)]))]
+                old_q_value_sim = Q_table[s[0], s[1], a]
+                future_q_value_sim = np.max(Q_table[next_state_sim[0], next_state_sim[1]])
+                Q_table[s[0], s[1], a] = old_q_value_sim + alpha * (reward_sim + gamma * future_q_value_sim - old_q_value_sim)
+
+            # Update posisi agen
+            agent_position = new_position
+
+            # Visualisasikan grid dengan agen
+            display_grid(agent_position, obstacles, goal_position)
+            time.sleep(0.2)  # Waktu jeda untuk animasi
+
+            # Hentikan jika mencapai tujuan
+            if agent_position == goal_position:
+                st.write(f"Goal reached in episode {ep + 1}!")
+                break
+
+        # Kurangi epsilon untuk mengurangi eksplorasi seiring waktu
         epsilon *= epsilon_decay
 
-        # Display the agent's progress
-        display_grid(agent_position, display_area)
-        time.sleep(0.2)  # Short pause to simulate video-like animation
+# Struktur aplikasi utama Streamlit
+st.title("Interactive Grid World with Dyna-Q Agent")
 
-        # Stop if the agent reaches the goal
-        if agent_position == goal_position:
-            st.write("Goal reached!")
-            break
-
-# Streamlit app structure
-st.title("Interactive AI Agent in Grid World")
-
-# Sidebar controls for customization
+# Sidebar controls
 st.sidebar.header("Simulation Controls")
-episodes = st.sidebar.slider("Number of Episodes", 1, 100, 20)
-use_qlearning = st.sidebar.checkbox("Use Q-learning", True)
 
-# Create a display area for the grid visualization
-display_area = st.empty()
-display_grid(start_position, display_area)
+# Tampilkan grid interaktif dan ambil posisi halangan dari pengguna
+obstacles = display_interactive_grid(grid_size, obstacles)
 
-# Run training when user clicks the button
+# Tombol untuk memulai pelatihan agen
 if st.sidebar.button("Start Training"):
-    train_agent(episodes, use_qlearning, display_area)
+    train_agent(episodes, use_dyna_q)
