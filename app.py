@@ -40,25 +40,49 @@ def move_agent(agent_position, action):
 # Training function with Q-learning
 def train_agent(episodes, use_qlearning, display_area):
     agent_position = start_position
+    alpha = 0.1  # Learning rate
+    gamma = 0.9  # Discount factor
+    epsilon = 1.0  # Exploration rate (starts high, decays over time)
+    epsilon_decay = 0.995  # Decay factor for exploration rate
+
     for _ in range(episodes):
-        if use_qlearning:
-            action = np.argmax(Q_table[agent_position])  # Choose best action
+        # Decide on action using epsilon-greedy strategy (balance exploration and exploitation)
+        if np.random.rand() < epsilon:
+            action = np.random.randint(0, 4)  # Explore: Random action
         else:
-            action = np.random.randint(0, 4)  # Random action for exploration
+            action = np.argmax(Q_table[agent_position])  # Exploit: Best known action
 
-        agent_position = move_agent(agent_position, action)
+        # Perform the action and move the agent
+        new_position = move_agent(agent_position, action)
 
-        # Update Q-table (simple rule for demonstration)
-        reward = 1 if agent_position == goal_position else -0.1
-        Q_table[agent_position][action] += 0.1 * (reward + np.max(Q_table[agent_position]) - Q_table[agent_position][action])
+        # Check if the new position is out of bounds (penalty)
+        if new_position[0] < 0 or new_position[0] >= grid_size or new_position[1] < 0 or new_position[1] >= grid_size:
+            reward = -1  # Penalize for hitting the border
+            new_position = agent_position  # Don't let agent move out of bounds
+        elif new_position == goal_position:
+            reward = 1  # Positive reward for reaching the goal
+        else:
+            reward = -0.1  # Small penalty for regular moves
 
-        # Check if goal is reached
+        # Update Q-value using the Q-learning formula
+        old_q_value = Q_table[agent_position[0], agent_position[1], action]
+        future_q_value = np.max(Q_table[new_position[0], new_position[1]])  # Max Q-value for the new position
+        Q_table[agent_position[0], agent_position[1], action] = old_q_value + alpha * (reward + gamma * future_q_value - old_q_value)
+
+        # Update agent's position
+        agent_position = new_position
+
+        # Decrease epsilon over time to reduce exploration
+        epsilon *= epsilon_decay
+
+        # Display the agent's progress
         display_grid(agent_position, display_area)
+        time.sleep(0.2)  # Short pause to simulate video-like animation
+
+        # Stop if the agent reaches the goal
         if agent_position == goal_position:
             st.write("Goal reached!")
             break
-
-        time.sleep(0.2)  # Short pause to simulate video-like animation
 
 # Streamlit app structure
 st.title("Interactive AI Agent in Grid World")
