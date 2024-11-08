@@ -5,20 +5,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-# Set grid size and positions
-grid_size = 5
-goal_position = (4, 4)
+# Sidebar untuk mengatur ukuran grid
+st.sidebar.header("Grid Settings")
+grid_size = st.sidebar.slider("Grid Size", min_value=5, max_value=10, value=5)
+
+# Sidebar untuk memasukkan posisi halangan
+st.sidebar.header("Obstacle Settings")
+num_obstacles = st.sidebar.slider("Number of Obstacles", min_value=0, max_value=5, value=2)
+obstacles = []
+for i in range(num_obstacles):
+    x = st.sidebar.number_input(f"Obstacle {i+1} Row", min_value=0, max_value=grid_size-1, value=i)
+    y = st.sidebar.number_input(f"Obstacle {i+1} Col", min_value=0, max_value=grid_size-1, value=i)
+    obstacles.append((x, y))
+
+# Set posisi tujuan dan agen awal
+goal_position = (grid_size - 1, grid_size - 1)
 start_position = (0, 0)
 
-# Q-table for demonstration purposes
+# Q-table untuk demo
 Q_table = np.zeros((grid_size, grid_size, 4))  # 4 actions (up, down, left, right)
 action_mapping = {0: "Up", 1: "Down", 2: "Left", 3: "Right"}
 
-# Display function
+# Fungsi untuk menampilkan grid
 def display_grid(agent_position, display_area):
     grid = np.zeros((grid_size, grid_size))
-    grid[goal_position] = 0.5  # Goal marked in a different color
-    grid[agent_position] = 1  # Agent marked in another color
+    grid[goal_position] = 0.5  # Mark the goal
+    grid[agent_position] = 1   # Mark the agent
+
+    for obstacle in obstacles:
+        if 0 <= obstacle[0] < grid_size and 0 <= obstacle[1] < grid_size:
+            grid[obstacle] = -1  # Mark obstacles
 
     fig, ax = plt.subplots()
     ax.imshow(grid, cmap="coolwarm", origin="upper")
@@ -28,13 +44,17 @@ def display_grid(agent_position, display_area):
     
     display_area.pyplot(fig)
 
-# Move agent based on action
+# Fungsi untuk menggerakkan agen dengan mempertimbangkan halangan
 def move_agent(agent_position, action):
     x, y = agent_position
-    if action == 0 and x > 0: x -= 1          # Move up
+    if action == 0 and x > 0: x -= 1  # Move up
     elif action == 1 and x < grid_size - 1: x += 1  # Move down
-    elif action == 2 and y > 0: y -= 1        # Move left
+    elif action == 2 and y > 0: y -= 1  # Move left
     elif action == 3 and y < grid_size - 1: y += 1  # Move right
+
+    # Check if the new position is an obstacle
+    if (x, y) in obstacles:
+        return agent_position  # Prevent moving into obstacle
     return (x, y)
 
 # Training function with Q-learning
@@ -46,7 +66,7 @@ def train_agent(episodes, use_qlearning, display_area):
     epsilon_decay = 0.995  # Decay factor for exploration rate
 
     for _ in range(episodes):
-        # Decide on action using epsilon-greedy strategy (balance exploration and exploitation)
+        # Decide on action using epsilon-greedy strategy
         if np.random.rand() < epsilon:
             action = np.random.randint(0, 4)  # Explore: Random action
         else:
@@ -55,10 +75,9 @@ def train_agent(episodes, use_qlearning, display_area):
         # Perform the action and move the agent
         new_position = move_agent(agent_position, action)
 
-        # Check if the new position is out of bounds (penalty)
-        if new_position[0] < 0 or new_position[0] >= grid_size or new_position[1] < 0 or new_position[1] >= grid_size:
-            reward = -1  # Penalize for hitting the border
-            new_position = agent_position  # Don't let agent move out of bounds
+        # Check if the new position is out of bounds or an obstacle
+        if new_position == agent_position:
+            reward = -1  # Penalize for hitting an obstacle or boundary
         elif new_position == goal_position:
             reward = 1  # Positive reward for reaching the goal
         else:
@@ -91,13 +110,6 @@ st.title("Interactive AI Agent in Grid World")
 st.sidebar.header("Simulation Controls")
 episodes = st.sidebar.slider("Number of Episodes", 1, 100, 20)
 use_qlearning = st.sidebar.checkbox("Use Q-learning", True)
-
-# Manual control for agent movement
-st.subheader("Manual Agent Control")
-if st.button("Up"): start_position = move_agent(start_position, 0)
-if st.button("Down"): start_position = move_agent(start_position, 1)
-if st.button("Left"): start_position = move_agent(start_position, 2)
-if st.button("Right"): start_position = move_agent(start_position, 3)
 
 # Create a display area for the grid visualization
 display_area = st.empty()
