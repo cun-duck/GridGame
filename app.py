@@ -61,7 +61,7 @@ def run_episode():
     total_reward = 0
     trajectory = []
     
-    for step in range(100):
+    for step in range(100):  # Mengatur panjang langkah di satu episode
         action = choose_action(state)
         next_state, reward = take_action(state, action)
         total_reward += reward
@@ -73,11 +73,11 @@ def run_episode():
         
         state = next_state
         
-        # Visualisasi (Real-time video)
+        # Visualisasi (Real-time canvas)
         img = np.ones((400, 400, 3), dtype=np.uint8) * 255  # Latar belakang putih
         cv2.rectangle(img, (state[1]*80, state[0]*80), (state[1]*80 + 80, state[0]*80 + 80), (0, 0, 255), -1)  # Gambar agen
         cv2.rectangle(img, (GOAL_STATE[1]*80, GOAL_STATE[0]*80), (GOAL_STATE[1]*80 + 80, GOAL_STATE[0]*80 + 80), (0, 255, 0), -1)  # Goal
-        cv2.putText(img, f'Episode {step+1}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        cv2.putText(img, f'Step {step + 1}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
         
         # Halangan
         if state == OBSTACLE_STATE:
@@ -85,7 +85,7 @@ def run_episode():
         
         # Display image as real-time video
         st.image(img, channels="BGR", use_column_width=True)
-        time.sleep(0.1)
+        time.sleep(0.1)  # Atur kecepatan visualisasi (lebih lambat untuk efek video)
     
     return total_reward, trajectory
 
@@ -105,11 +105,11 @@ def main():
     if start_button:
         st.sidebar.text("Pelatihan dimulai! Visualisasi akan ditampilkan secara langsung.")
         
+        # Menjalankan pelatihan tanpa pemisahan per episode
         for episode in range(episodes):
-            st.sidebar.text(f"Episode {episode + 1}")
             total_reward, trajectory = run_episode()
             st.sidebar.text(f"Total reward episode {episode + 1}: {total_reward}")
-            time.sleep(0.5)
+            time.sleep(0.5)  # Memberikan sedikit waktu antara episode
 
 if __name__ == "__main__":
     main()
