@@ -55,11 +55,13 @@ def dyna_q_planning():
         if state is None:
             continue
 
-        if model[state]:
-            action = random.choice(list(model[state].keys()))
-            next_state = model[state][action]["next_state"]
-            reward = model[state][action]["reward"]
-            update_q(state, action, reward, next_state)
+        action = random.choice(list(model[state].keys())) if model[state] else None
+        if action is None:
+            continue
+
+        next_state = model[state][action]["next_state"]
+        reward = model[state][action]["reward"]
+        update_q(state, action, reward, next_state)
 
 # Function to run the episode
 def run_episode():
@@ -107,8 +109,6 @@ def create_video(trajectory, filename='agent_path.mp4'):
     """Generate a video of the agent's path."""
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Define the codec for mp4
     out = cv2.VideoWriter(filename, fourcc, 10.0, (400, 400))
-
-    img = np.ones((400, 400, 3), dtype=np.uint8) * 255  # White canvas for each frame
 
     for position in trajectory:
         img = np.ones((400, 400, 3), dtype=np.uint8) * 255  # Reset to white
