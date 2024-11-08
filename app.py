@@ -1,148 +1,115 @@
-import random
-import numpy as np
 import streamlit as st
+import numpy as np
+import random
 import time
 import cv2
-import matplotlib.pyplot as plt
-from collections import defaultdict
-from PIL import Image
 
-# Constants
+# Parameter untuk GridWorld
 GRID_SIZE = 5
-PLANNING_STEPS = 50
-GOAL_POSITION = (4, 4)
-OBSTACLE_POSITIONS = [(1, 1), (2, 2), (3, 3)]  # Add obstacles here
-ACTION_SPACE = ['up', 'down', 'left', 'right']
+ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+GOAL_STATE = (GRID_SIZE - 1, GRID_SIZE - 1)
+OBSTACLE_STATE = (2, 2)  # Contoh posisi halangan
+Q_TABLE = {}
+MODEL = {}
 
-# Initialize Q-table and model
-q_table = np.zeros((GRID_SIZE, GRID_SIZE, len(ACTION_SPACE)))
-model = defaultdict(dict)
+# Inisialisasi Q-table
+def init_q_table():
+    for x in range(GRID_SIZE):
+        for y in range(GRID_SIZE):
+            Q_TABLE[(x, y)] = {action: 0 for action in ACTIONS}
 
-# Initialize agent position
-agent_position = (0, 0)
+# Fungsi untuk memilih aksi berdasarkan epsilon-greedy
+def choose_action(state, epsilon=0.1):
+    if random.uniform(0, 1) < epsilon:
+        return random.choice(ACTIONS)
+    else:
+        q_values = Q_TABLE[state]
+        return max(q_values, key=q_values.get)
 
-# Helper functions
-def get_max_action(state):
-    """Return the action with the highest Q-value for a given state."""
+# Fungsi untuk melakukan aksi dan mendapatkan reward
+def take_action(state, action):
     x, y = state
-    return np.argmax(q_table[x, y])
+    if action == 'UP' and x > 0:
+        return (x - 1, y), -1  # Reward negatif untuk setiap langkah
+    elif action == 'DOWN' and x < GRID_SIZE - 1:
+        return (x + 1, y), -1
+    elif action == 'LEFT' and y > 0:
+        return (x, y - 1), -1
+    elif action == 'RIGHT' and y < GRID_SIZE - 1:
+        return (x, y + 1), -1
+    return state, -1  # Tetap di tempat jika aksi tidak valid
 
-def move_agent(position, action):
-    """Return the next position based on the action."""
-    x, y = position
-    if action == 0:  # Up
-        return max(x - 1, 0), y
-    elif action == 1:  # Down
-        return min(x + 1, GRID_SIZE - 1), y
-    elif action == 2:  # Left
-        return x, max(y - 1, 0)
-    elif action == 3:  # Right
-        return x, min(y + 1, GRID_SIZE - 1)
+# Fungsi untuk memperbarui model Dyna-Q
+def update_model(state, action, next_state, reward):
+    if state not in MODEL:
+        MODEL[state] = {}
+    if action not in MODEL[state]:
+        MODEL[state][action] = {"next_state": next_state, "reward": reward}
 
-def update_q(state, action, reward, next_state):
-    """Update Q-table using the Q-learning update rule."""
-    x, y = state
-    next_x, next_y = next_state
-    alpha = 0.1  # Learning rate
-    gamma = 0.9  # Discount factor
-    max_future_q = np.max(q_table[next_x, next_y])
-    q_table[x, y, action] = (1 - alpha) * q_table[x, y, action] + alpha * (reward + gamma * max_future_q)
-
+# Dyna-Q Planning
 def dyna_q_planning():
-    """Perform Dyna-Q planning."""
-    for _ in range(PLANNING_STEPS):
-        state = random.choice(list(model.keys())) if model else None
-        if state is None:
-            continue
+    for state in list(MODEL.keys()):
+        for action in list(MODEL[state].keys()):
+            next_state = MODEL[state][action]["next_state"]
+            reward = MODEL[state][action]["reward"]
+            q_values = Q_TABLE[state]
+            q_values[action] += 0.1 * (reward + 0.9 * max(Q_TABLE[next_state].values()) - q_values[action])
 
-        action = random.choice(list(model[state].keys())) if model[state] else None
-        if action is None:
-            continue
-
-        next_state = model[state][action]["next_state"]
-        reward = model[state][action]["reward"]
-        update_q(state, action, reward, next_state)
-
-# Function to run the episode
+# Fungsi untuk menjalankan satu episode pelatihan
 def run_episode():
-    global agent_position
+    state = (0, 0)  # Mulai dari pojok kiri atas
     total_reward = 0
-    agent_position = (0, 0)  # Reset agent position at start of each episode
-
-    trajectory = [agent_position]  # Store agent's path for video visualization
-
-    while agent_position != GOAL_POSITION:
-        action = get_max_action(agent_position)  # Choose the action with the highest Q-value
-
-        next_state = move_agent(agent_position, action)  # Simulate agent's next state
-
-        # Check if the next state is an obstacle or out of bounds
-        if next_state in OBSTACLE_POSITIONS or next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
-            reward = -1  # Negative reward for hitting obstacle or boundary
-            next_state = agent_position  # Don't move if it hits an obstacle
-        else:
-            reward = -0.1  # Small negative reward to encourage quicker completion
-
-        # Update Q-table based on real experience
-        update_q(agent_position, action, reward, next_state)
-
-        # Save the transition in the model for planning
-        if agent_position not in model:
-            model[agent_position] = {}
-        model[agent_position][action] = {
-            "next_state": next_state,
-            "reward": reward
-        }
-
-        # Perform Dyna-Q planning
-        dyna_q_planning()
-
-        # Move the agent
-        agent_position = next_state
-        trajectory.append(agent_position)
+    trajectory = []
+    
+    for step in range(100):
+        action = choose_action(state)
+        next_state, reward = take_action(state, action)
         total_reward += reward
-
+        trajectory.append((state, action, reward))
+        
+        # Pembelajaran Dyna-Q
+        update_model(state, action, next_state, reward)
+        dyna_q_planning()
+        
+        state = next_state
+        
+        # Visualisasi (Real-time video)
+        img = np.ones((400, 400, 3), dtype=np.uint8) * 255  # Latar belakang putih
+        cv2.rectangle(img, (state[1]*80, state[0]*80), (state[1]*80 + 80, state[0]*80 + 80), (0, 0, 255), -1)  # Gambar agen
+        cv2.rectangle(img, (GOAL_STATE[1]*80, GOAL_STATE[0]*80), (GOAL_STATE[1]*80 + 80, GOAL_STATE[0]*80 + 80), (0, 255, 0), -1)  # Goal
+        cv2.putText(img, f'Episode {step+1}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        
+        # Halangan
+        if state == OBSTACLE_STATE:
+            cv2.rectangle(img, (OBSTACLE_STATE[1]*80, OBSTACLE_STATE[0]*80), (OBSTACLE_STATE[1]*80 + 80, OBSTACLE_STATE[0]*80 + 80), (255, 0, 0), -1)
+        
+        # Display image as real-time video
+        st.image(img, channels="BGR", use_column_width=True)
+        time.sleep(0.1)
+    
     return total_reward, trajectory
 
-# Function to create video
-def create_video(trajectory, filename='agent_path.mp4'):
-    """Generate a video of the agent's path."""
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Define the codec for mp4
-    out = cv2.VideoWriter(filename, fourcc, 10.0, (400, 400))
+# Fungsi utama Streamlit
+def main():
+    st.title('Pelatihan Agen AI dengan Dyna-Q')
 
-    for position in trajectory:
-        img = np.ones((400, 400, 3), dtype=np.uint8) * 255  # Reset to white
-        x, y = position
-        cv2.circle(img, (y * 80 + 40, x * 80 + 40), 20, (0, 0, 255), -1)  # Draw agent as red circle
-        cv2.circle(img, (GOAL_POSITION[1] * 80 + 40, GOAL_POSITION[0] * 80 + 40), 20, (0, 255, 0), -1)  # Draw goal as green circle
-        for obs in OBSTACLE_POSITIONS:
-            cv2.rectangle(img, (obs[1] * 80, obs[0] * 80), (obs[1] * 80 + 80, obs[0] * 80 + 80), (0, 0, 0), -1)  # Draw obstacle
-        out.write(img)  # Write frame to video
+    # Sidebar untuk pengaturan
+    st.sidebar.header('Pengaturan')
+    episodes = st.sidebar.slider('Jumlah Episode', min_value=1, max_value=100, value=50, step=1)
+    start_button = st.sidebar.button('Mulai Pelatihan')
 
-    out.release()  # Finalize video
+    # Inisialisasi Q-table
+    init_q_table()
 
-# Streamlit UI
-st.title("Dyna-Q Agent Training Visualization")
+    # Menjalankan pelatihan jika tombol ditekan
+    if start_button:
+        st.sidebar.text("Pelatihan dimulai! Visualisasi akan ditampilkan secara langsung.")
+        
+        for episode in range(episodes):
+            st.sidebar.text(f"Episode {episode + 1}")
+            total_reward, trajectory = run_episode()
+            st.sidebar.text(f"Total reward episode {episode + 1}: {total_reward}")
+            time.sleep(0.5)
 
-# Slider for number of episodes
-episodes = st.slider("Number of Episodes", min_value=1, max_value=100, value=10, step=1)
-
-# Checkbox for Q-learning
-use_q_learning = st.checkbox("Use Q-learning", value=True)
-
-# Start button
-if st.button("Start Training"):
-    st.text("Training the agent...")
-
-    trajectory = []
-
-    # Run the training process
-    for _ in range(episodes):
-        total_reward, episode_trajectory = run_episode()
-        trajectory.extend(episode_trajectory)  # Append trajectory for video generation
-
-    # Create video from trajectory
-    create_video(trajectory)
-
-    # Display video
-    st.video('agent_path.mp4')
+if __name__ == "__main__":
+    main()
